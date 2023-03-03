@@ -8,13 +8,12 @@ from sklearn.utils import check_array
 3. train values의 learning된 weight들과 구하고자 하는 output을 linear regression에 fit 한다
 3. test values를 esn모델에 learning 하지말고 통과 시킨다
 4. test values의 learning된 weight들을 linear regression에 predict를 통해 구하고자 하는 target을 알 수 있다
-# 참고사항으로 esn에서 fit은 input 길이에 제한이 없지만 linear regression을 할 때에는 input의 길이에서 initLen을 뺀 길이 만큼을 피팅한다
 '''
 
 class ESN():
     def __init__(self, n_readout, 
-                 resSize, damping=0.7, spectral_radius=0.1,
-                 weight_scaling=1.25,initLen=0, random_state=42):
+                 resSize, damping=0.3, spectral_radius=None,
+                 weight_scaling=1.25,initLen=100, random_state=42):
         
         self.resSize=resSize
         self.n_readout=n_readout # 마지막에 연결된 노드 갯수
@@ -26,35 +25,43 @@ class ESN():
         self.Win=None # 학습하여 input weight가 있다면 넣어준다
         self.W=None # 학습하여 weight가 있다면 넣어준다
         torch.manual_seed(random_state) # torch에서 random값 고정
+        self.out=None
         
         
     def init_fit(self,input):
+        if input.ndim==1:
+            input=input.reshape(1,-1)
         input = check_array(input, ensure_2d=True)
-        n_input, n_feature = input.shape
+        n_feature, n_input = input.shape
         W = torch.rand(self.resSize,self.resSize, dtype=torch.double) - 0.5
         self.Win = (torch.rand(self.resSize,1+n_feature, dtype=torch.double) - 0.5) * 1
         print('Computing spectral radius...')
         #spectral_radius = max(abs(linalg.eig(W)[0]))  default
         print('done.')
          # 가중치 업데이트 과정 -> weight_scaling 값으로 나눈 값으로 가중치를 업데이트함. -> weight_scaling은 가중치 학습률이다.
-        self.W= W*(self.weight_scaling/self.spectral_radius)
+        rhoW = max(abs(linalg.eig(W)[0]))
+        if self.spectral_radius == None:
+            self.W= W*(self.weight_scaling/rhoW)
+        else:
+            self.W= W*(self.weight_scaling/self.spectral_radius)
         
-       
-        X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen)).type(torch.double) # X의 크기는 n_레저버 * 1
+        Yt=torch.DoubleTensor(input[:,self.initLen+1:])
+        
+        X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen-1)).type(torch.double) # X의 크기는 n_레저버 * 1
         x = torch.zeros((self.resSize,1)).type(torch.double)    # x의 크기는 n_레저버 * 1
         
         
-        for t in range(n_input):
-            u=torch.DoubleTensor(np.array(input[t,:],ndmin=2)).T # input에서 값을 하나씩 들고온다
+        for t in range(n_input-1):
+            u=torch.DoubleTensor(np.array(input[:,t],ndmin=2)) # input에서 값을 하나씩 들고온다
+            
             x = (1-self.damping)*x + self.damping*torch.tanh(torch.matmul(self.Win, torch.vstack([torch.DoubleTensor([1]),u])) + torch.matmul( self.W, x ))
             # x에 전체노드에서 소실률에 의거해 위의 식에 따라 계산된 weight값을 저장한다 
             if t >= self.initLen:
                 X[:,t-self.initLen] = torch.vstack([torch.DoubleTensor([1]),u,x])[:,0]  # X에 1,u,x를 쌓아 저장한다 
-
         self.X=X
         self.x=x
-        self.out = input[n_input] #generative mode를 위한 input의 last value를 저장
-        
+        self.out = input[:,n_input-1] #generative mode를 위한 input의 last value를 저장
+       
         #### train the output by ridge regression
         # reg = 1e-8  # regularization coefficient
         #### direct equations from texts:
@@ -63,7 +70,12 @@ class ESN():
         # reg*np.eye(1+inSize+resSize) ) )
         # using scipy.linalg.solve:
         reg = 1e-8
-        self.Wout = linalg.solve(torch.matmul(X,X.T) + reg*torch.eye(1+n_feature+self.resSize), torch.matmul(X,torch.DoubleTensor(input[self.initLen:]))).T
+        Wout = linalg.solve(torch.matmul(self.X,self.X.T) + reg*torch.eye(1+n_feature+self.resSize), torch.matmul(X,Yt.T)).T
+        
+        Wout=np.array(Wout)
+        Wout=torch.DoubleTensor(Wout)
+        self.Wout=torch.DoubleTensor(Wout)
+       
         return self
         
         
@@ -96,13 +108,14 @@ class ESN():
         # run the trained ESN in a generative mode. no need to initialize here, 
         # because x is initialized with training data and we continue from there.
         x=self.x
-        Y = torch.zeros((outLen,self.n_readout))
-        u = torch.DoubleTensor(np.array(self.out,ndmin=2)).T
+       
+        Y = torch.zeros((self.n_readout,outLen))
+        u = torch.DoubleTensor(self.out)
+        print(u)
         for t in range(outLen):
             
-            x = (1-self.damping)*x + self.damping*torch.tanh( torch.matmul( self.Win, u) ) + torch.matmul( self.W, x ) 
-            y = torch.matmul( self.Wout, torch.vstack([u,x])) 
-
+            x = (1-self.damping)*x + self.damping*torch.tanh( torch.matmul( self.Win, torch.vstack([torch.DoubleTensor([1]),u]) ) + torch.matmul( self.W, x ) )
+            y = torch.matmul( self.Wout, torch.vstack([torch.DoubleTensor([1]),u,x])) 
             Y[:,t] = y
             # generative mode:
             u = y
