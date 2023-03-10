@@ -8,3 +8,7 @@ ESN(Echo-State-Network)
 * 참고사항으로 esn에서 fit은 input 길이에 제한이 없지만 linear regression을 할 때에는 input의 길이에서 initLen을 뺀 길이 만큼을 피팅한다
 
 --------------------
+3/10 추가 수정
+* generative mode를 통해 fit 까지 학습되어 있던 데이터에서 직후 원하는 데이터의 길이만큼을 predict 할 수 있는 강력한 성능을 지님. 
+* 데이터를 input 할때에는 row는 feature, column은 time으로 작성되어 있으며, output weight는 row는 time, column은 weight의 갯수이다.
+* numpy에서 torch를 통해 gpu 연산이 가능하도록 변경하였음.
