@@ -97,12 +97,12 @@ class ESN():
             self.Win = (torch.rand(self.resSize,1+n_feature, dtype=torch.double).to(device) - 0.5) * 1
         if self.W == None:      # 앞에서 학습을 안 시켰을 경우 아래 적용
             if self.spectral_radius == None:
-            self.W= W*(self.weight_scaling/rhoW)
+                self.W= W*(self.weight_scaling/rhoW)
             else:
-            self.W= W*(self.weight_scaling/self.spectral_radius)
+                self.W= W*(self.weight_scaling/self.spectral_radius)
         
         X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen-1)).type(torch.double)
-        X=X..to(device)   # X의 크기는 n_레저버 * 1
+        X=X.to(device)   # X의 크기는 n_레저버 * 1
         x = torch.zeros((self.resSize,1)).type(torch.double)    # x의 크기는 n_레저버 * 1
         x=x.to(device)
         
