@@ -9,7 +9,7 @@ from sklearn.utils import check_array
 3. test values를 esn모델에 learning 하지말고 통과 시킨다
 4. test values의 learning된 weight들을 linear regression에 predict를 통해 구하고자 하는 target을 알 수 있다
 '''
-
+device = torch.device('cuda:0' if USE_CUDA else 'cpu')
 class ESN():
     def __init__(self, n_readout, 
                  resSize, damping=0.3, spectral_radius=None,
@@ -34,8 +34,8 @@ class ESN():
             input=input.reshape(1,-1)
         input = check_array(input, ensure_2d=True)
         n_feature, n_input = input.shape
-        W = torch.rand(self.resSize,self.resSize, dtype=torch.double) - 0.5
-        self.Win = (torch.rand(self.resSize,1+n_feature, dtype=torch.double) - 0.5) * 1
+        W = torch.rand(self.resSize,self.resSize, dtype=torch.double).to(device) - 0.5
+        self.Win = (torch.rand(self.resSize,1+n_feature, dtype=torch.double).to(device) - 0.5) * 1
         print('Computing spectral radius...')
         #spectral_radius = max(abs(linalg.eig(W)[0]))  default
         print('done.')
@@ -46,14 +46,16 @@ class ESN():
         else:
             self.W= W*(self.weight_scaling/self.spectral_radius)
         
-        Yt=torch.DoubleTensor(input[:,self.initLen+1:])
+        Yt=torch.DoubleTensor(input[:,self.initLen+1:]).to(device)
         
-        X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen-1)).type(torch.double) # X의 크기는 n_레저버 * 1
+        X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen-1)).type(torch.double)
+        X=X..to(device)   # X의 크기는 n_레저버 * 1
         x = torch.zeros((self.resSize,1)).type(torch.double)    # x의 크기는 n_레저버 * 1
+        x=x.to(device)
         
         
         for t in range(n_input-1):
-            u=torch.DoubleTensor(np.array(input[:,t],ndmin=2)) # input에서 값을 하나씩 들고온다
+            u=torch.DoubleTensor(np.array(input[:,t],ndmin=2)).to(device) # input에서 값을 하나씩 들고온다
             
             x = (1-self.damping)*x + self.damping*self.inter_unit(torch.matmul(self.Win, torch.vstack([torch.DoubleTensor([1]),u])) + torch.matmul( self.W, x ))
             # x에 전체노드에서 소실률에 의거해 위의 식에 따라 계산된 weight값을 저장한다 
@@ -74,7 +76,7 @@ class ESN():
         Wout = linalg.solve(torch.matmul(self.X,self.X.T) + reg*torch.eye(1+n_feature+self.resSize), torch.matmul(X,Yt.T)).T
         
         Wout=np.array(Wout)
-        Wout=torch.DoubleTensor(Wout)
+        Wout=torch.DoubleTensor(Wout).to(device)
         self.Wout=torch.DoubleTensor(Wout)
        
         return self
@@ -86,20 +88,26 @@ class ESN():
         return self.X[2:,:].T # 계산된 weight들을 들고와서 regression에 사용한다
     
     def pre_fit(self,input): # 이미 학습을 시킨 후 w와 input w가 있을 때 사용
+       if input.ndim==1:
+            input=input.reshape(1,-1)
         input = check_array(input, ensure_2d=True)
-        n_input, n_feature = input.shape
-        
+        n_feature, n_input = input.shape
+        rhoW = max(abs(linalg.eig(W)[0]))
         if self.Win == None:    # 앞에서 학습을 안 시켰을 경우 아래 적용
-            self.Win=(torch.rand(self.resSize,1+n_feature, dtype=torch.double) - 0.5) * 1
+            self.Win = (torch.rand(self.resSize,1+n_feature, dtype=torch.double).to(device) - 0.5) * 1
         if self.W == None:      # 앞에서 학습을 안 시켰을 경우 아래 적용
-            self.W=torch.rand(self.resSize,self.resSize, dtype=torch.double) - 0.5
-            self.W=self.weight*(self.weight_scaling/self.spectral_radius)
+            if self.spectral_radius == None:
+            self.W= W*(self.weight_scaling/rhoW)
+            else:
+            self.W= W*(self.weight_scaling/self.spectral_radius)
         
-        X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen)).type(torch.double)
-        x = torch.zeros((self.resSize,1)).type(torch.double)
+        X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen-1)).type(torch.double)
+        X=X..to(device)   # X의 크기는 n_레저버 * 1
+        x = torch.zeros((self.resSize,1)).type(torch.double)    # x의 크기는 n_레저버 * 1
+        x=x.to(device)
         
         for t in range(n_input):
-            u=torch.DoubleTensor(np.array(input[t,:],ndmin=2)).T
+            u=torch.DoubleTensor(np.array(input[:,t],ndmin=2)).to(device) # input에서 값을 하나씩 들고온다
             x = (1-self.damping)*x + self.damping*self.inter_unit(torch.matmul(self.Win, torch.vstack([torch.DoubleTensor([1]),u])) + torch.matmul( self.W, x ))
             if t >= self.initLen:
                 X[:,t-self.initLen] = torch.vstack([torch.DoubleTensor([1]),u,x])[:,0]    
@@ -110,13 +118,13 @@ class ESN():
         # because x is initialized with training data and we continue from there.
         x=self.x
        
-        Y = torch.zeros((self.n_readout,outLen))
-        u = torch.DoubleTensor(self.out)
+        Y = torch.zeros((self.n_readout,outLen)).to(device)
+        u = torch.DoubleTensor(self.out).to(device)
      
         for t in range(outLen):
             
             x = (1-self.damping)*x + self.damping*self.inter_unit( torch.matmul( self.Win, torch.vstack([torch.DoubleTensor([1]),u]) ) + torch.matmul( self.W, x ) )
-            y = torch.matmul( self.Wout, torch.vstack([torch.DoubleTensor([1]),u,x])) 
+            y = torch.matmul( self.Wout, torch.vstack([torch.DoubleTensor([1]),u,x])).to(device) 
             Y[:,t] = y
             # generative mode:
             u = y
