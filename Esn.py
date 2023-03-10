@@ -112,7 +112,7 @@ class ESN():
        
         Y = torch.zeros((self.n_readout,outLen))
         u = torch.DoubleTensor(self.out)
-        print(u)
+     
         for t in range(outLen):
             
             x = (1-self.damping)*x + self.damping*self.inter_unit( torch.matmul( self.Win, torch.vstack([torch.DoubleTensor([1]),u]) ) + torch.matmul( self.W, x ) )
