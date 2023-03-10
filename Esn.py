@@ -9,6 +9,7 @@ from sklearn.utils import check_array
 3. test values를 esn모델에 learning 하지말고 통과 시킨다
 4. test values의 learning된 weight들을 linear regression에 predict를 통해 구하고자 하는 target을 알 수 있다
 '''
+USE_CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if USE_CUDA else 'cpu')
 class ESN():
     def __init__(self, n_readout, 
@@ -49,7 +50,7 @@ class ESN():
         Yt=torch.DoubleTensor(input[:,self.initLen+1:]).to(device)
         
         X = torch.zeros((1+n_feature+self.resSize,n_input-self.initLen-1)).type(torch.double)
-        X=X..to(device)   # X의 크기는 n_레저버 * 1
+        X=X.to(device)   # X의 크기는 n_레저버 * 1
         x = torch.zeros((self.resSize,1)).type(torch.double)    # x의 크기는 n_레저버 * 1
         x=x.to(device)
         
@@ -88,7 +89,7 @@ class ESN():
         return self.X[2:,:].T # 계산된 weight들을 들고와서 regression에 사용한다
     
     def pre_fit(self,input): # 이미 학습을 시킨 후 w와 input w가 있을 때 사용
-       if input.ndim==1:
+        if input.ndim==1:
             input=input.reshape(1,-1)
         input = check_array(input, ensure_2d=True)
         n_feature, n_input = input.shape
